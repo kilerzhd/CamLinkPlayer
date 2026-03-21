@@ -1,4 +1,5 @@
 const { ipcRenderer } = require('electron');
+const translations = require('./translations');
 
 const videoElement = document.getElementById('stream-video');
 const videoSelect = document.getElementById('video-source');
@@ -8,8 +9,12 @@ const delayValText = document.getElementById('delay-val');
 const startBtn = document.getElementById('start-btn');
 const fullscreenBtn = document.getElementById('fullscreen-btn');
 const uiOverlay = document.getElementById('ui-overlay');
+const mainPanel = document.getElementById('main-panel');
+const toggleUiBtn = document.getElementById('toggle-ui-btn');
+const languageSelect = document.getElementById('language-select');
 
 // State
+let currentLang = 'fr';
 let currentVideoStream = null;
 let currentAudioStream = null;
 let idleTimer = null;
@@ -34,6 +39,26 @@ async function init() {
         }).catch(err => console.warn('Permission request failed or no devices:', err));
 
         await getDevices();
+
+        // Load i18n state
+        const savedLang = localStorage.getItem('camlinkLanguage');
+        if (savedLang && (savedLang === 'en' || savedLang === 'fr')) {
+            currentLang = savedLang;
+        } else {
+            // Auto-detect system language
+            const systemLang = navigator.language.split('-')[0];
+            if (systemLang === 'en' || systemLang === 'fr') {
+                currentLang = systemLang;
+            }
+        }
+        languageSelect.value = currentLang;
+        updateUI();
+
+        // Load UI state (minimized or not)
+        const isMinimized = localStorage.getItem('camlinkUiMinimized') === 'true';
+        if (isMinimized) {
+            mainPanel.classList.add('minimized');
+        }
     } catch (err) {
         console.error('Error initializing devices:', err);
     }
@@ -48,8 +73,9 @@ async function getDevices() {
         audioSelect.innerHTML = '';
         
         // Add default options
-        videoSelect.appendChild(new Option('Sélectionner une source vidéo...', ''));
-        audioSelect.appendChild(new Option('Sans audio', 'none'));
+        const t = translations[currentLang];
+        videoSelect.appendChild(new Option(t.selectVideo, ''));
+        audioSelect.appendChild(new Option(t.selectAudio, 'none'));
 
         let videoCount = 1;
         let audioCount = 1;
@@ -113,7 +139,8 @@ async function startStream() {
     const audioSource = audioSelect.value;
 
     if (!videoSource) {
-        alert("Veuillez sélectionner une source vidéo.");
+        const t = translations[currentLang];
+        alert(t.errorVideo);
         return;
     }
 
@@ -189,7 +216,8 @@ async function startStream() {
             audioDelayNode.connect(audioCtx.destination);
         }
         
-        startBtn.textContent = 'En cours...';
+        const t = translations[currentLang];
+        startBtn.textContent = t.playing;
         startBtn.classList.add('playing');
         isPlaying = true;
         
@@ -197,8 +225,9 @@ async function startStream() {
         resetIdleTimer();
 
     } catch (err) {
+        const t = translations[currentLang];
         console.error('Error starting stream:', err);
-        alert("Erreur lors du démarrage du flux: " + err.message);
+        alert(t.errorStream + err.message);
     }
 }
 
@@ -213,6 +242,58 @@ document.addEventListener('dblclick', () => {
 });
 
 startBtn.addEventListener('click', startStream);
+
+// Handle UI toggle (collapse/expand)
+toggleUiBtn.addEventListener('click', (e) => {
+    e.stopPropagation(); // Prevent dblclick or other events from firing
+    const isMinimized = mainPanel.classList.toggle('minimized');
+    localStorage.setItem('camlinkUiMinimized', isMinimized);
+});
+
+// Handle clicking on the minimized panel to expand it
+mainPanel.addEventListener('click', () => {
+    if (mainPanel.classList.contains('minimized')) {
+        mainPanel.classList.remove('minimized');
+        localStorage.setItem('camlinkUiMinimized', false);
+    }
+});
+
+// Handle language change
+languageSelect.addEventListener('change', (e) => {
+    currentLang = e.target.value;
+    localStorage.setItem('camlinkLanguage', currentLang);
+    updateUI();
+});
+
+function updateUI() {
+    const t = translations[currentLang];
+    
+    // Update elements with data-i18n
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+        const key = el.getAttribute('data-i18n');
+        if (t[key]) {
+            el.textContent = t[key];
+        }
+    });
+
+    // Update elements with data-i18n-title
+    document.querySelectorAll('[data-i18n-title]').forEach(el => {
+        const key = el.getAttribute('data-i18n-title');
+        if (t[key]) {
+            el.title = t[key];
+        }
+    });
+
+    // Update dynamic button text
+    if (isPlaying) {
+        startBtn.textContent = t.playing;
+    } else {
+        startBtn.textContent = t.start;
+    }
+
+    // Refresh device lists to update "Select..." labels
+    getDevices();
+}
 
 // Handle delay slider
 delaySlider.addEventListener('input', (event) => {

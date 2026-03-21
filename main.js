@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, powerSaveBlocker } = require('electron');
 const path = require('path');
 
 let mainWindow;
@@ -26,6 +26,10 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  // Prevent the display from sleeping while the app is open
+  const id = powerSaveBlocker.start('prevent-display-sleep');
+  console.log(`Power save blocker started with ID: ${id}`);
+
   createWindow();
 
   app.on('activate', () => {
