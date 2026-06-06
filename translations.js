@@ -11,9 +11,21 @@ const translations = {
         playing: "En cours...",
         fullscreen: "Plein Écran",
         language: "Langue",
+        volume: "Volume",
         errorVideo: "Veuillez sélectionner une source vidéo.",
         errorStream: "Erreur lors du démarrage du flux: ",
-        toggleUi: "Réduire/Agrandir le Menu"
+        errorPermission: "Accès refusé. Veuillez vérifier que votre Antivirus (ex: BitDefender) ne bloque pas l'accès à la webcam, et que les paramètres de confidentialité Windows autorisent les applications de bureau.",
+        mute: "Couper le son",
+        toggleUi: "Réduire/Agrandir le Menu",
+        updateCheck: "Vérifier les Mises à jour",
+        updateAvailable: "Mise à jour disponible !",
+        updateDownloading: "Téléchargement: ",
+        updateDownloaded: "Prêt à installer !",
+        updateError: "Erreur de mise à jour",
+        updateInstalling: "Installation...",
+        download: "Télécharger",
+        install: "Installer",
+        noUpdate: "Déjà à jour"
     },
     en: {
         title: "CamLink Player",
@@ -27,9 +39,21 @@ const translations = {
         playing: "Playing...",
         fullscreen: "Full Screen",
         language: "Language",
+        volume: "Volume",
         errorVideo: "Please select a video source.",
         errorStream: "Error starting stream: ",
-        toggleUi: "Collapse/Expand Menu"
+        errorPermission: "Access denied. Please check your Antivirus (e.g. BitDefender) is not blocking webcam access, and that Windows Privacy settings allow desktop apps to use the camera.",
+        mute: "Mute audio",
+        toggleUi: "Collapse/Expand Menu",
+        updateCheck: "Check for Updates",
+        updateAvailable: "Update Available!",
+        updateDownloading: "Downloading: ",
+        updateDownloaded: "Ready to Install!",
+        updateError: "Update Error",
+        updateInstalling: "Installing...",
+        download: "Download",
+        install: "Install",
+        noUpdate: "Already up to date"
     }
 };
 

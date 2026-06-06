@@ -12,6 +12,13 @@ const uiOverlay = document.getElementById('ui-overlay');
 const mainPanel = document.getElementById('main-panel');
 const toggleUiBtn = document.getElementById('toggle-ui-btn');
 const languageSelect = document.getElementById('language-select');
+const volumeSlider = document.getElementById('volume-control');
+const volumeValText = document.getElementById('volume-val');
+const muteCheckbox = document.getElementById('mute-control');
+const updateBtn = document.getElementById('update-btn');
+const updateNotification = document.getElementById('update-notification');
+const updateMessage = document.getElementById('update-message');
+const updateActionBtn = document.getElementById('update-action-btn');
 
 // State
 let currentLang = 'fr';
@@ -22,25 +29,13 @@ let isPlaying = false;
 let audioCtx = null;
 let audioSourceNode = null;
 let audioDelayNode = null;
+let gainNode = null;
+let isMuted = false;
 
 // Initialize
 async function init() {
     try {
-        // Load saved delay settings
-        const savedDelay = localStorage.getItem('camlinkAudioDelay');
-        if (savedDelay !== null) {
-            delaySlider.value = savedDelay;
-            delayValText.textContent = `${savedDelay} ms`;
-        }
-
-        // Request initial permissions to enumerate devices properly
-        await navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then(stream => {
-            stream.getTracks().forEach(track => track.stop());
-        }).catch(err => console.warn('Permission request failed or no devices:', err));
-
-        await getDevices();
-
-        // Load i18n state
+        // 1. Load i18n state first so translations are correct during device enumeration
         const savedLang = localStorage.getItem('camlinkLanguage');
         if (savedLang && (savedLang === 'en' || savedLang === 'fr')) {
             currentLang = savedLang;
@@ -52,12 +47,45 @@ async function init() {
             }
         }
         languageSelect.value = currentLang;
-        updateUI();
 
-        // Load UI state (minimized or not)
+        // 2. Load saved delay settings
+        const savedDelay = localStorage.getItem('camlinkAudioDelay');
+        if (savedDelay !== null) {
+            delaySlider.value = savedDelay;
+            delayValText.textContent = `${savedDelay} ms`;
+        }
+
+        // 3. Load volume settings
+        const savedVolume = localStorage.getItem('camlinkVolume');
+        if (savedVolume !== null) {
+            volumeSlider.value = savedVolume;
+            volumeValText.textContent = `${savedVolume}%`;
+        }
+
+        const savedMute = localStorage.getItem('camlinkMuted') === 'true';
+        isMuted = savedMute;
+        muteCheckbox.checked = isMuted;
+
+        // 4. Load UI state (minimized or not)
         const isMinimized = localStorage.getItem('camlinkUiMinimized') === 'true';
         if (isMinimized) {
             mainPanel.classList.add('minimized');
+        }
+
+        // 5. Request initial permissions to enumerate devices properly
+        await navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then(stream => {
+            stream.getTracks().forEach(track => track.stop());
+        }).catch(err => console.warn('Permission request failed or no devices:', err));
+
+        // 6. Get available video/audio devices (loads saved devices or auto-selects capture card)
+        await getDevices();
+
+        // 7. Update UI elements with translation (skipping redundant device enumeration)
+        updateUI(false);
+
+        // 8. Auto-start stream if a video device is selected
+        if (videoSelect.value) {
+            startStream();
         }
     } catch (err) {
         console.error('Error initializing devices:', err);
@@ -212,8 +240,12 @@ async function startStream() {
             audioDelayNode = audioCtx.createDelay(1.0);
             audioDelayNode.delayTime.value = parseInt(delaySlider.value) / 1000.0;
 
+            gainNode = audioCtx.createGain();
+            gainNode.gain.value = isMuted ? 0 : parseInt(volumeSlider.value) / 100.0;
+
             audioSourceNode.connect(audioDelayNode);
-            audioDelayNode.connect(audioCtx.destination);
+            audioDelayNode.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
         }
         
         const t = translations[currentLang];
@@ -227,7 +259,12 @@ async function startStream() {
     } catch (err) {
         const t = translations[currentLang];
         console.error('Error starting stream:', err);
-        alert(t.errorStream + err.message);
+        
+        if (err.name === 'NotAllowedError' || err.message.toLowerCase().includes('permission denied')) {
+            alert(t.errorPermission);
+        } else {
+            alert(t.errorStream + err.message);
+        }
     }
 }
 
@@ -265,7 +302,67 @@ languageSelect.addEventListener('change', (e) => {
     updateUI();
 });
 
-function updateUI() {
+// Update logic listeners
+updateBtn.addEventListener('click', () => {
+    ipcRenderer.send('check-for-update');
+});
+
+ipcRenderer.on('update-status', (event, status, info) => {
+    const t = translations[currentLang];
+    
+    switch (status) {
+        case 'checking':
+            updateBtn.disabled = true;
+            updateBtn.textContent = t.loading;
+            break;
+            
+        case 'available':
+            updateBtn.classList.add('hidden');
+            updateNotification.classList.remove('hidden');
+            updateMessage.textContent = t.updateAvailable;
+            updateActionBtn.textContent = t.download;
+            updateActionBtn.onclick = () => {
+                ipcRenderer.send('download-update');
+                updateActionBtn.disabled = true;
+            };
+            break;
+            
+        case 'not-available':
+            updateBtn.disabled = false;
+            updateBtn.textContent = t.noUpdate;
+            setTimeout(() => {
+                updateBtn.textContent = t.updateCheck;
+            }, 3000);
+            break;
+            
+        case 'downloading':
+            updateMessage.textContent = `${t.updateDownloading}${Math.round(info)}%`;
+            updateActionBtn.classList.add('hidden');
+            break;
+            
+        case 'downloaded':
+            updateMessage.textContent = t.updateDownloaded;
+            updateActionBtn.classList.remove('hidden');
+            updateActionBtn.disabled = false;
+            updateActionBtn.textContent = t.install;
+            updateActionBtn.onclick = () => {
+                ipcRenderer.send('install-update');
+            };
+            break;
+            
+        case 'error':
+            updateBtn.classList.remove('hidden');
+            updateBtn.disabled = false;
+            updateBtn.textContent = t.updateError;
+            console.error('Update error:', info);
+            setTimeout(() => {
+                updateBtn.textContent = t.updateCheck;
+            }, 5000);
+            break;
+    }
+});
+
+function updateUI(refreshDevices = true) {
     const t = translations[currentLang];
     
     // Update elements with data-i18n
@@ -292,7 +389,9 @@ function updateUI() {
     }
 
     // Refresh device lists to update "Select..." labels
-    getDevices();
+    if (refreshDevices) {
+        getDevices();
+    }
 }
 
 // Handle delay slider
@@ -305,6 +404,22 @@ delaySlider.addEventListener('input', (event) => {
     if (audioDelayNode && audioCtx) {
         audioDelayNode.delayTime.value = parseInt(ms) / 1000.0;
     }
+});
+
+// Handle volume slider
+volumeSlider.addEventListener('input', (event) => {
+    const val = event.target.value;
+    volumeValText.textContent = `${val}%`;
+    localStorage.setItem('camlinkVolume', val);
+    
+    if (gainNode && !isMuted) {
+        gainNode.gain.value = parseInt(val) / 100.0;
+    }
+});
+
+// Handle mute checkbox
+muteCheckbox.addEventListener('change', (event) => {
+    toggleMute(event.target.checked);
 });
 
 // Listen for device changes
@@ -333,10 +448,96 @@ function resetIdleTimer() {
     }
 }
 
+function handleKeyDown(e) {
+    // Ignore shortcuts if focusing on something (though we don't have text inputs currently)
+    if (e.target.tagName === 'INPUT' && e.target.type !== 'range') return;
+
+    switch (e.key.toLowerCase()) {
+        case 'f':
+            ipcRenderer.send('toggle-fullscreen');
+            break;
+        case 'escape':
+            ipcRenderer.send('exit-fullscreen');
+            break;
+        case 'm':
+            toggleMute();
+            break;
+        case 's':
+            takeScreenshot();
+            break;
+        case '+':
+        case '=':
+            adjustVolume(5);
+            break;
+        case '-':
+        case '_':
+            adjustVolume(-5);
+            break;
+    }
+}
+
+function adjustVolume(delta) {
+    let newVal = parseInt(volumeSlider.value) + delta;
+    newVal = Math.max(0, Math.min(100, newVal));
+    volumeSlider.value = newVal;
+    volumeValText.textContent = `${newVal}%`;
+    localStorage.setItem('camlinkVolume', newVal);
+    
+    if (gainNode && !isMuted) {
+        gainNode.gain.value = newVal / 100.0;
+    }
+    
+    resetIdleTimer();
+}
+
+function toggleMute(forceState = null) {
+    isMuted = forceState !== null ? forceState : !isMuted;
+    muteCheckbox.checked = isMuted;
+    localStorage.setItem('camlinkMuted', isMuted);
+    
+    if (audioCtx && gainNode) {
+        if (isMuted) {
+            gainNode.gain.value = 0;
+        } else {
+            gainNode.gain.value = parseInt(volumeSlider.value) / 100.0;
+        }
+    }
+    
+    resetIdleTimer();
+}
+
+function takeScreenshot() {
+    if (!isPlaying) return;
+
+    try {
+        const canvas = document.createElement('canvas');
+        canvas.width = videoElement.videoWidth;
+        canvas.height = videoElement.videoHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+        
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T')[0];
+        const time = new Date().toLocaleTimeString('fr-FR').replace(/[:]/g, '-');
+        const filename = `CamLink-Capture-${timestamp}-${time}.png`;
+        
+        const link = document.createElement('a');
+        link.download = filename;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+        
+        console.log('Screenshot taken:', filename);
+    } catch (err) {
+        console.error('Failed to take screenshot:', err);
+    }
+}
+
 // Mouse movement resets the timer
 document.addEventListener('mousemove', resetIdleTimer);
 document.addEventListener('mousedown', resetIdleTimer);
-document.addEventListener('keydown', resetIdleTimer);
+document.addEventListener('keydown', (e) => {
+    resetIdleTimer();
+    handleKeyDown(e);
+});
 
 // Boot
 init();
